@@ -1,0 +1,307 @@
+```html
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FLO — Factory Logistics Optimizer</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+
+  <!-- Navigation -->
+  <nav class="navbar">
+    <div class="brand">
+      <div class="brand-icon">F</div>
+
+      <div>
+        <div class="brand-title">FLO — Factory Logistics Optimizer</div>
+
+        <div class="brand-meta">
+          <span class="brand-sub">SESSION 2 · FACTORY SIMULATOR</span>
+          <a href="http://127.0.0.1:8000/core_view" target="_blank">
+            Core Dashboard ↗
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <div class="nav-actions">
+
+      <div class="status-badge">
+        <span class="status-dot"></span>
+        <span>CONNECTED</span>
+      </div>
+
+      <button class="btn btn-secondary" onclick="fetch(`${FACTORY_URL}/api/control/pause`, {method:'POST'})">
+        Pause
+      </button>
+
+      <button class="btn btn-secondary" onclick="fetch(`${FACTORY_URL}/api/control/resume`, {method:'POST'})">
+        Resume
+      </button>
+
+      <button class="btn btn-secondary" onclick="fetch(`${FACTORY_URL}/api/control/reset`, {method:'POST'})">
+        Reset
+      </button>
+
+    </div>
+  </nav>
+
+
+  <!-- Main -->
+  <main class="main-container">
+
+    <!-- Factory Floor -->
+    <section class="card factory-card">
+
+      <div class="card-title">
+        <span>Factory Floor</span>
+        <span class="small-info">AGV Speed: 1.5 units/tick</span>
+      </div>
+
+      <canvas id="factoryCanvas" width="800" height="480"></canvas>
+
+    </section>
+
+
+    <!-- Right Panel -->
+    <aside class="right-panel">
+
+      <!-- KPIs -->
+      <div class="kpi-grid">
+
+        <div class="kpi-card">
+          <div class="kpi-label">Completed</div>
+          <div class="kpi-value" id="kpiCompleted">0</div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-label">Pending</div>
+          <div class="kpi-value" id="kpiPending">0</div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-label">Avg Time</div>
+          <div class="kpi-value" id="kpiAvgTime">0s</div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-label">FLO Gain</div>
+          <div class="kpi-value gain" id="kpiGain">+0%</div>
+        </div>
+
+      </div>
+
+
+      <!-- AGV Fleet -->
+      <section class="card table-card">
+
+        <div class="card-title">
+          AGV Fleet Status
+        </div>
+
+        <div class="table-wrapper">
+
+          <table>
+
+            <thead>
+              <tr>
+                <th>AGV</th>
+                <th>Battery</th>
+                <th>Status</th>
+                <th>Task</th>
+              </tr>
+            </thead>
+
+            <tbody id="agvTableBody">
+            </tbody>
+
+          </table>
+
+        </div>
+
+      </section>
+
+
+      <!-- Tasks -->
+      <section class="card table-card">
+
+        <div class="card-title">
+          Material Tasks
+        </div>
+
+        <div class="table-wrapper">
+
+          <table>
+
+            <thead>
+              <tr>
+                <th>Task ID</th>
+                <th>Route</th>
+                <th>Priority</th>
+                <th>Status</th>
+                <th>Assigned</th>
+              </tr>
+            </thead>
+
+            <tbody id="taskTableBody">
+            </tbody>
+
+          </table>
+
+        </div>
+
+      </section>
+
+    </aside>
+
+
+    <!-- Bottom -->
+    <div class="bottom-container">
+
+      <!-- Event Log -->
+      <section class="card">
+
+        <div class="card-title">
+          <span>Event Log</span>
+          <span class="small-info">Live system activity</span>
+        </div>
+
+        <div class="event-log" id="eventLog">
+        </div>
+
+      </section>
+
+
+      <!-- Controls -->
+      <section class="card">
+
+        <div class="card-title">
+          Test Scenarios
+        </div>
+
+        <div class="control-panel-grid">
+
+          <button class="btn btn-primary" onclick="openNewTaskModal()">
+            + New Task
+          </button>
+
+          <button class="btn btn-danger" onclick="triggerUrgentTask()">
+            Urgent Task
+          </button>
+
+          <button class="btn btn-warning" onclick="triggerAddCongestion()">
+            Add Congestion
+          </button>
+
+          <button class="btn btn-secondary" onclick="triggerRemoveCongestion()">
+            Clear Congestion
+          </button>
+
+          <button class="btn btn-danger" onclick="triggerBlockRoute()">
+            Block Route
+          </button>
+
+          <button class="btn btn-secondary" onclick="triggerUnblockRoute()">
+            Unblock Route
+          </button>
+
+          <button class="btn btn-warning" onclick="triggerLowBatteryTest()">
+            Low Battery
+          </button>
+
+          <button class="btn btn-danger" onclick="triggerFailAGV()">
+            Fail AGV
+          </button>
+
+        </div>
+
+      </section>
+
+    </div>
+
+  </main>
+
+
+  <!-- New Task Modal -->
+  <div class="modal-overlay" id="taskModal" style="display: none;">
+
+    <div class="modal-content">
+
+      <h3>Configure New Task</h3>
+
+      <form onsubmit="submitNewTask(event)">
+
+        <div class="form-group">
+          <label for="taskPickup">Pickup Location</label>
+
+          <select id="taskPickup" class="form-control">
+            <option value="WAREHOUSE">Warehouse</option>
+            <option value="M1">Machine 1</option>
+            <option value="M2">Machine 2</option>
+            <option value="ASSY">Assembly Station</option>
+          </select>
+        </div>
+
+
+        <div class="form-group">
+          <label for="taskDest">Destination Location</label>
+
+          <select id="taskDest" class="form-control">
+            <option value="M1">Machine 1</option>
+            <option value="M2">Machine 2</option>
+            <option value="ASSY">Assembly Station</option>
+            <option value="DISPATCH" selected>
+              Dispatch / Finished Goods
+            </option>
+          </select>
+        </div>
+
+
+        <div class="form-group">
+          <label for="taskPriority">Task Priority</label>
+
+          <select id="taskPriority" class="form-control">
+            <option value="LOW">Low</option>
+            <option value="NORMAL" selected>Normal</option>
+            <option value="HIGH">High</option>
+            <option value="URGENT">Urgent</option>
+          </select>
+        </div>
+
+
+        <div class="form-group">
+          <label for="taskWeight">Payload Weight (kg)</label>
+
+          <input type="number" id="taskWeight" class="form-control" value="20" min="5" max="60">
+        </div>
+
+
+        <div class="modal-actions">
+
+          <button type="button" class="btn btn-secondary" onclick="closeNewTaskModal()">
+            Cancel
+          </button>
+
+          <button type="submit" class="btn btn-primary">
+            Submit Task
+          </button>
+
+        </div>
+
+      </form>
+
+    </div>
+
+  </div>
+
+
+  <script src="/static/app.js"></script>
+
+</body>
+
+</html>
+```

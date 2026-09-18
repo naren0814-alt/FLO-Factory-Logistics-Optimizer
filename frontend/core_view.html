@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FLO Core Engine — Session 1 Dashboard</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    .reasoning-box {
+      background: #c7d8ff;
+      border: 1px solid var(--accent-cyan);
+      border-radius: 8px;
+      padding: 1rem;
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      color: #38bdf8;
+      white-space: pre-wrap;
+      margin-bottom: 1rem;
+    }
+
+    .eval-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 6px 12px;
+      background: rgba(255, 255, 255, 0.02);
+      border-radius: 4px;
+      margin-bottom: 4px;
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+    }
+
+    .eval-feasible {
+      border-left: 3px solid var(--status-green);
+    }
+
+    .eval-infeasible {
+      border-left: 3px solid var(--status-red);
+    }
+  </style>
+</head>
+
+<body>
+
+  <nav class="navbar">
+    <div class="brand">
+      <div class="brand-icon" style="background: linear-gradient(135deg, var(--accent-purple), var(--accent-blue));">C
+      </div>
+      <div>
+        <div class="brand-title">FLO — Optimization Engine</div>
+        <div class="brand-sub"
+          style="color: var(--accent-purple); border-color: rgba(139, 92, 246, 0.3); background: rgba(139, 92, 246, 0.1);">
+          SESSION 1: FLO CORE SYSTEM</div>
+      </div>
+    </div>
+    <div class="nav-actions">
+      <div class="status-badge" style="color: var(--accent-purple); border-color: rgba(139, 92, 246, 0.3);">
+        <div class="status-dot" style="background: var(--accent-purple); box-shadow: 0 0 8px var(--accent-purple);">
+        </div>
+        <span>OPTIMIZER RUNNING</span>
+      </div>
+    </div>
+  </nav>
+
+  <div class="main-container" style="grid-template-columns: 1fr 1fr; max-width: 1400px; margin-top: 1rem;">
+
+    <!-- Left Column: Latest Decision & Structured Reasoning -->
+    <div class="card">
+      <div class="card-title">Latest Decision & Multi-Factor Reasoning</div>
+      <div id="latestDecisionContainer">
+        <div class="reasoning-box" id="reasoningBox">
+          Waiting for first optimization decision...
+        </div>
+        <div style="font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem; color: var(--text-muted);">
+          Fleet Hard Feasibility Evaluations:
+        </div>
+        <div id="evaluationsList">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Column: FLO vs Baseline Metrics & Corridor Status -->
+    <div style="display: flex; flex-direction: column; gap: 1rem;">
+
+      <!-- Baseline Comparison Card -->
+      <div class="card">
+        <div class="card-title">FLO Optimizer vs Naive Baseline Performance</div>
+        <div class="kpi-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 1rem;">
+          <div class="kpi-card">
+            <div class="kpi-label">FLO Avg Time</div>
+            <div class="kpi-value" id="floTime">0s</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Baseline Avg Time</div>
+            <div class="kpi-value" style="color: var(--status-amber);" id="baselineTime">0s</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Efficiency Gain</div>
+            <div class="kpi-value" style="color: var(--status-green);" id="gainPct">+0%</div>
+          </div>
+        </div>
+        <div style="font-size: 0.78rem; color: var(--text-dim); line-height: 1.4;">
+          *<strong>Naive Baseline Strategy</strong>: Nearest available AGV + Shortest unweighted distance route.<br>
+          *<strong>FLO Strategy</strong>: Stage 1 Hard Battery Feasibility + Stage 2 Dynamic Congestion-Aware
+          Multi-Factor Scoring + Dynamic Event Replanning.
+        </div>
+      </div>
+
+      <!-- Corridor Congestion & Blockage Monitor -->
+      <div class="card">
+        <div class="card-title">Factory Corridor Topology Status</div>
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Corridor</th>
+                <th>Capacity</th>
+                <th>Occupied</th>
+                <th>Congestion Factor</th>
+                <th>State</th>
+              </tr>
+            </thead>
+            <tbody id="corridorTableBody">
+              <!-- Dynamically rendered -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <script>
+    const CORE_URL = 'http://127.0.0.1:8000';
+
+    async function fetchCoreState() {
+      try {
+        const res = await fetch(`${CORE_URL}/api/state`);
+        if (res.ok) {
+          const data = await res.json();
+          renderCoreView(data);
+        }
+      } catch (err) {
+        console.warn("Core API polling error...", err);
+      }
+    }
+
+    function renderCoreView(data) {
+      // 1. Render Latest Decision & Reasoning
+      const dec = data.last_decision;
+      const rBox = document.getElementById('reasoningBox');
+      const evalList = document.getElementById('evaluationsList');
+
+      if (dec) {
+        rBox.innerText = `DECISION FOR TASK [${dec.task_id}] -> ASSIGNED TO [${dec.assigned_agv_id || 'NONE'}]\nTimestamp: ${dec.timestamp}\nAlgorithm: ${dec.algorithm_used}\nSelected Route: ${dec.selected_route.join(' -> ')}\n\nEXPLANATION:\n${dec.reasoning}`;
+
+        evalList.innerHTML = (dec.evaluations || []).map(ev => `
+          <div class="eval-row ${ev.feasible ? 'eval-feasible' : 'eval-infeasible'}">
+            <span><strong>${ev.agv_id}</strong>: ${ev.reason}</span>
+            <span>Req Energy: ${ev.required_energy.toFixed(1)}% | Bat: ${ev.available_battery.toFixed(1)}%</span>
+          </div>
+        `).join('');
+      }
+
+      // 2. Render Metrics & Baseline
+      const m = data.metrics || {};
+      const b = data.baseline || {};
+      document.getElementById('floTime').innerText = `${(m.avg_delivery_time || 0).toFixed(1)}s`;
+      document.getElementById('baselineTime').innerText = `${(b.baseline_delivery_time || 0).toFixed(1)}s`;
+      document.getElementById('gainPct').innerText = `+${(m.flo_efficiency_gain_pct || 0).toFixed(1)}%`;
+
+      // 3. Render Corridor Topology
+      const tbody = document.getElementById('corridorTableBody');
+      if (tbody && data.edges) {
+        // Unique corridor edges
+        const uniqueEdges = data.edges.filter(e => e.source < e.destination);
+        tbody.innerHTML = uniqueEdges.map(e => {
+          let stateLabel = '<span class="badge badge-available">NORMAL</span>';
+          if (e.blocked) stateLabel = '<span class="badge badge-failed">BLOCKED</span>';
+          else if (e.congestion > 0.5) stateLabel = '<span class="badge badge-low">CONGESTED</span>';
+
+          return `
+            <tr>
+              <td><strong>${e.source} ↔ ${e.destination}</strong></td>
+              <td>${e.capacity}</td>
+              <td>${e.occupied_count}</td>
+              <td>${(1.0 + 2.5 * e.congestion).toFixed(2)}x</td>
+              <td>${stateLabel}</td>
+            </tr>
+          `;
+        }).join('');
+      }
+    }
+
+    setInterval(fetchCoreState, 500);
+    fetchCoreState();
+  </script>
+</body>
+
+</html>

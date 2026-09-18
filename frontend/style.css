@@ -1,0 +1,694 @@
+/* =========================================
+   FLO — Minimal Factory Simulator
+   ========================================= */
+
+:root {
+  --bg: #f4f6f8;
+  --surface: #ffffff;
+  --surface-soft: #f8fafc;
+
+  --border: #dfe4ea;
+  --border-dark: #cbd2da;
+
+  --text: #1f2937;
+  --text-muted: #667085;
+  --text-light: #98a2b3;
+
+  --blue: #2563eb;
+  --blue-dark: #1d4ed8;
+  --blue-light: #eff6ff;
+
+  --green: #16803c;
+  --green-light: #ecfdf3;
+
+  --yellow: #a15c00;
+  --yellow-light: #fff7e6;
+
+  --red: #c62828;
+  --red-light: #fff1f1;
+
+  --font: Arial, Helvetica, sans-serif;
+  --mono: "Courier New", monospace;
+}
+
+
+/* =========================================
+   RESET
+   ========================================= */
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  min-height: 100vh;
+}
+
+
+/* =========================================
+   NAVBAR
+   ========================================= */
+
+.navbar {
+  height: 64px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  padding: 0 24px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand-icon {
+  width: 34px;
+  height: 34px;
+
+  background: var(--blue);
+  color: white;
+
+  border-radius: 6px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.brand-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.brand-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 3px;
+}
+
+.brand-sub {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--blue);
+}
+
+.brand-meta a {
+  font-size: 11px;
+  color: var(--blue);
+  text-decoration: none;
+}
+
+.brand-meta a:hover {
+  text-decoration: underline;
+}
+
+
+/* =========================================
+   NAV ACTIONS
+   ========================================= */
+
+.nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  padding: 6px 10px;
+
+  background: var(--green-light);
+  color: var(--green);
+
+  border: 1px solid #b7e4c7;
+  border-radius: 5px;
+
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+
+  background: var(--green);
+  border-radius: 50%;
+}
+
+
+/* =========================================
+   BUTTONS
+   ========================================= */
+
+.btn {
+  border: 1px solid transparent;
+  border-radius: 5px;
+
+  padding: 7px 12px;
+
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 600;
+
+  cursor: pointer;
+
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.btn-primary {
+  background: var(--blue);
+  color: white;
+  border-color: var(--blue);
+}
+
+.btn-primary:hover {
+  background: var(--blue-dark);
+}
+
+.btn-secondary {
+  background: white;
+  color: var(--text);
+  border-color: var(--border-dark);
+}
+
+.btn-secondary:hover {
+  background: var(--surface-soft);
+}
+
+.btn-warning {
+  background: var(--yellow-light);
+  color: var(--yellow);
+  border-color: #efd49b;
+}
+
+.btn-warning:hover {
+  background: #fff0c9;
+}
+
+.btn-danger {
+  background: var(--red-light);
+  color: var(--red);
+  border-color: #efb4b4;
+}
+
+.btn-danger:hover {
+  background: #ffe3e3;
+}
+
+
+/* =========================================
+   MAIN LAYOUT
+   ========================================= */
+
+.main-container {
+  width: min(1500px, calc(100% - 40px));
+
+  margin: 20px auto;
+
+  display: grid;
+
+  grid-template-columns: minmax(650px, 2fr) minmax(420px, 1fr);
+
+  gap: 16px;
+}
+
+
+/* =========================================
+   CARDS
+   ========================================= */
+
+.card {
+  background: var(--surface);
+
+  border: 1px solid var(--border);
+  border-radius: 7px;
+
+  padding: 16px;
+}
+
+.card-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  margin-bottom: 12px;
+
+  font-size: 13px;
+  font-weight: 600;
+
+  color: var(--text);
+}
+
+.small-info {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: normal;
+  color: var(--text-muted);
+}
+
+
+/* =========================================
+   FACTORY CANVAS
+   ========================================= */
+
+.factory-card {
+  min-width: 0;
+}
+
+#factoryCanvas {
+  display: block;
+
+  width: 100%;
+  height: auto;
+
+  background: #f8fafc;
+
+  border: 1px solid var(--border);
+
+  border-radius: 5px;
+}
+
+
+/* =========================================
+   RIGHT PANEL
+   ========================================= */
+
+.right-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+
+/* =========================================
+   KPI
+   ========================================= */
+
+.kpi-grid {
+  display: grid;
+
+  grid-template-columns: repeat(4, 1fr);
+
+  gap: 8px;
+}
+
+.kpi-card {
+  background: var(--surface);
+
+  border: 1px solid var(--border);
+  border-radius: 6px;
+
+  padding: 12px;
+
+  text-align: center;
+}
+
+.kpi-label {
+  font-size: 10px;
+
+  color: var(--text-muted);
+
+  text-transform: uppercase;
+
+  font-weight: 600;
+}
+
+.kpi-value {
+  margin-top: 5px;
+
+  font-family: var(--mono);
+
+  font-size: 18px;
+  font-weight: 700;
+
+  color: var(--blue);
+}
+
+.kpi-value.gain {
+  color: var(--green);
+}
+
+
+/* =========================================
+   TABLES
+   ========================================= */
+
+.table-card {
+  min-height: 180px;
+}
+
+.table-wrapper {
+  max-height: 210px;
+
+  overflow-x: auto;
+  overflow-y: auto;
+}
+
+table {
+  width: 100%;
+
+  border-collapse: collapse;
+
+  font-size: 11px;
+}
+
+th {
+  position: sticky;
+  top: 0;
+
+  background: var(--surface-soft);
+
+  color: var(--text-muted);
+
+  text-align: left;
+
+  font-weight: 600;
+
+  padding: 8px;
+
+  border-bottom: 1px solid var(--border);
+}
+
+td {
+  padding: 8px;
+
+  border-bottom: 1px solid #edf0f2;
+
+  font-family: var(--mono);
+
+  color: var(--text);
+}
+
+tbody tr:hover {
+  background: #fafbfc;
+}
+
+
+/* =========================================
+   STATUS BADGES
+   ========================================= */
+
+.badge {
+  display: inline-block;
+
+  padding: 3px 7px;
+
+  border-radius: 4px;
+
+  font-family: var(--font);
+
+  font-size: 9px;
+  font-weight: 600;
+
+  text-transform: uppercase;
+}
+
+.badge-available {
+  background: var(--green-light);
+  color: var(--green);
+}
+
+.badge-moving {
+  background: var(--blue-light);
+  color: var(--blue);
+}
+
+.badge-charging {
+  background: var(--yellow-light);
+  color: var(--yellow);
+}
+
+.badge-low {
+  background: #fff4e8;
+  color: #b45309;
+}
+
+.badge-failed {
+  background: var(--red-light);
+  color: var(--red);
+}
+
+.badge-urgent {
+  background: var(--red-light);
+  color: var(--red);
+
+  border: 1px solid #efb4b4;
+}
+
+
+/* =========================================
+   BOTTOM AREA
+   ========================================= */
+
+.bottom-container {
+  grid-column: 1 / -1;
+
+  display: grid;
+
+  grid-template-columns: 1fr 1fr;
+
+  gap: 16px;
+}
+
+
+/* =========================================
+   EVENT LOG
+   ========================================= */
+
+.event-log {
+  height: 170px;
+
+  overflow-y: auto;
+
+  display: flex;
+  flex-direction: column;
+
+  gap: 4px;
+
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.log-entry {
+  padding: 6px 8px;
+
+  background: var(--surface-soft);
+
+  border-left: 3px solid var(--border-dark);
+
+  border-radius: 3px;
+}
+
+.log-entry.INFO {
+  border-left-color: var(--blue);
+}
+
+.log-entry.SUCCESS {
+  border-left-color: var(--green);
+}
+
+.log-entry.WARNING {
+  border-left-color: #d88900;
+}
+
+.log-entry.ERROR {
+  border-left-color: var(--red);
+}
+
+
+/* =========================================
+   SCENARIO CONTROLS
+   ========================================= */
+
+.control-panel-grid {
+  display: grid;
+
+  grid-template-columns: repeat(4, 1fr);
+
+  gap: 8px;
+}
+
+.control-panel-grid .btn {
+  min-height: 36px;
+}
+
+
+/* =========================================
+   MODAL
+   ========================================= */
+
+.modal-overlay {
+  position: fixed;
+
+  inset: 0;
+
+  background: rgba(15, 23, 42, 0.45);
+
+  display: flex;
+
+  align-items: center;
+  justify-content: center;
+
+  z-index: 999;
+}
+
+.modal-content {
+  width: 420px;
+  max-width: calc(100% - 30px);
+
+  background: white;
+
+  border: 1px solid var(--border);
+
+  border-radius: 8px;
+
+  padding: 20px;
+}
+
+.modal-content h3 {
+  margin-bottom: 18px;
+
+  font-size: 16px;
+}
+
+
+/* =========================================
+   FORM
+   ========================================= */
+
+.form-group {
+  margin-bottom: 14px;
+}
+
+.form-group label {
+  display: block;
+
+  margin-bottom: 5px;
+
+  font-size: 11px;
+  font-weight: 600;
+
+  color: var(--text);
+}
+
+.form-control {
+  width: 100%;
+
+  padding: 8px 9px;
+
+  background: white;
+
+  border: 1px solid var(--border-dark);
+
+  border-radius: 5px;
+
+  color: var(--text);
+
+  font-family: var(--font);
+  font-size: 12px;
+
+  outline: none;
+}
+
+.form-control:focus {
+  border-color: var(--blue);
+
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+}
+
+.modal-actions {
+  display: flex;
+
+  justify-content: flex-end;
+
+  gap: 8px;
+
+  margin-top: 18px;
+}
+
+
+/* =========================================
+   RESPONSIVE
+   ========================================= */
+
+@media (max-width: 1100px) {
+
+  .main-container {
+    grid-template-columns: 1fr;
+  }
+
+  .right-panel {
+    display: grid;
+
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .kpi-grid {
+    grid-column: 1 / -1;
+  }
+
+  .bottom-container {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+@media (max-width: 700px) {
+
+  .navbar {
+    height: auto;
+
+    padding: 12px;
+
+    align-items: flex-start;
+
+    gap: 12px;
+
+    flex-direction: column;
+  }
+
+  .nav-actions {
+    width: 100%;
+
+    flex-wrap: wrap;
+  }
+
+  .main-container {
+    width: calc(100% - 20px);
+
+    margin: 10px auto;
+  }
+
+  .right-panel {
+    display: flex;
+  }
+
+  .kpi-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .control-panel-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+}
