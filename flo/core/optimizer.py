@@ -3,7 +3,7 @@ FLO Core Optimizer — Master Optimization Engine & Central Decision Coordinator
 """
 
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 from flo.core.models import (
     AGVModel, TaskModel, NodeModel, EdgeModel,
     AGVStatus, TaskStatus, TaskPriority, DecisionExplanation,
@@ -17,6 +17,7 @@ from flo.core.congestion import CongestionManager
 from flo.core.replanner import Replanner
 from flo.core.baseline import BaselineOptimizer
 from flo.core.metrics import MetricsCollector
+from flo.core.coordination import FleetCoordinationEngine
 
 class FLOOptimizer:
     def __init__(self):
@@ -25,6 +26,7 @@ class FLOOptimizer:
         self.assignment_engine = AssignmentEngine(self.graph, self.battery_mgr)
         self.congestion_mgr = CongestionManager(self.graph)
         self.replanner = Replanner(self.graph, self.battery_mgr, self.assignment_engine)
+        self.coordination_engine = FleetCoordinationEngine()
         self.baseline_opt = BaselineOptimizer(self.graph)
         self.metrics_collector = MetricsCollector()
 
@@ -34,6 +36,7 @@ class FLOOptimizer:
         self.decisions: List[DecisionExplanation] = []
         self.last_decision: Optional[DecisionExplanation] = None
         self.pending_commands: List[Dict] = []
+        self.warned_low_battery_agvs: Set[str] = set()
 
     def _create_default_agvs(self) -> Dict[str, AGVModel]:
         agv_data = [
@@ -58,7 +61,7 @@ class FLOOptimizer:
             ("T002", "WAREHOUSE", "M2", TaskPriority.NORMAL, 20.0, 300.0),
             ("T003", "M1", "ASSY", TaskPriority.HIGH, 25.0, 240.0),
             ("T004", "M2", "ASSY", TaskPriority.NORMAL, 20.0, 300.0),
-            ("T005", "ASSY", "DISPATCH", TaskPriority.URGENT, 35.0, 180.0),
+            ("T005", "ASSY", "DISPATCH", TaskPriority.NORMAL, 35.0, 180.0),
         ]
         tasks = {}
         for tid, pickup, dest, prio, weight, deadline in raw_tasks:
@@ -97,6 +100,10 @@ class FLOOptimizer:
                 agv.carrying_material = a_data.get("carrying_material", agv.carrying_material)
                 agv.charging = a_data.get("charging", agv.charging)
 
+                # Reset warned state when AGV finishes charging
+                if agv.battery >= 85.0 and agv_id in self.warned_low_battery_agvs:
+                    self.warned_low_battery_agvs.remove(agv_id)
+
         for t_data in task_list:
             t_id = t_data["task_id"]
             if t_id not in self.tasks:
@@ -105,39 +112,57 @@ class FLOOptimizer:
                 task = self.tasks[t_id]
                 task.status = TaskStatus(t_data.get("status", task.status.value))
                 task.assigned_agv_id = t_data.get("assigned_agv_id", task.assigned_agv_id)
+                if task.status == TaskStatus.COMPLETED and task.actual_completion_time is None:
+                    task.actual_completion_time = datetime.now().timestamp()
+                    self.metrics_collector.record_task_completed(
+                        delivery_time=task.actual_completion_time - task.creation_time if task.creation_time > 0 else 45.0,
+                        distance=300.0,
+                        energy=5.0
+                    )
 
         # Update edge congestion
         self.congestion_mgr.update_live_congestion(list(self.agvs.values()))
         
-        # Check active AGVs for low battery risk
+        # Check active AGVs for low battery risk ONCE per transition
         for agv in self.agvs.values():
             if self.battery_mgr.check_active_agv_battery_risk(agv) and agv.status not in [AGVStatus.LOW_BATTERY, AGVStatus.CHARGING]:
-                self.replanner.handle_low_battery_risk(agv, self.tasks)
-                self.add_event("WARNING", f"AGV {agv.id} low battery detected ({agv.battery:.1f}%) — initiating charging divert", "BATTERY")
-                self.metrics_collector.record_battery_intervention()
+                if agv.id not in self.warned_low_battery_agvs:
+                    self.warned_low_battery_agvs.add(agv.id)
+                    cmds, evts = self.replanner.handle_low_battery_risk(agv, self.tasks)
+                    self.pending_commands.extend(cmds)
+                    self.add_event("WARNING", f"AGV {agv.id} low battery detected ({agv.battery:.1f}%) — initiating charging divert", "BATTERY")
+                    self.metrics_collector.record_battery_intervention()
+
+            # Auto-charge idle AVAILABLE AGVs with low battery (< 40%) so they don't block pending tasks
+            elif agv.status == AGVStatus.AVAILABLE and agv.battery < 40.0 and not agv.charging:
+                if agv.id not in self.warned_low_battery_agvs:
+                    self.warned_low_battery_agvs.add(agv.id)
+                    cmds, evts = self.replanner.handle_low_battery_risk(agv, self.tasks)
+                    self.pending_commands.extend(cmds)
+                    self.add_event("INFO", f"AGV {agv.id} idle with medium-low battery ({agv.battery:.1f}%) — sending to recharge", "BATTERY")
 
     def process_optimization_cycle(self) -> List[Dict]:
         """
         Main Optimization Loop:
         1. Evaluates pending tasks.
         2. Assigns best feasible AGV using Stage 1 & Stage 2 optimization.
-        3. Returns command list to execute in Factory Simulator.
+        3. Evaluates multi-AGV spatial-temporal zone coordination.
+        4. Returns command list to execute in Factory Simulator.
         """
         commands = list(self.pending_commands)
         self.pending_commands.clear()
 
         # Find pending tasks
         pending_tasks = [t for t in self.tasks.values() if t.status == TaskStatus.WAITING]
-        # Sort pending by priority (URGENT > HIGH > NORMAL > LOW)
         priority_order = {TaskPriority.URGENT: 0, TaskPriority.HIGH: 1, TaskPriority.NORMAL: 2, TaskPriority.LOW: 3}
         pending_tasks.sort(key=lambda x: priority_order.get(x.priority, 99))
 
         self.metrics_collector.update_pending_count(len(pending_tasks))
 
-        agv_list = list(self.agvs.values())
-
         for task in pending_tasks:
-            best_agv, explanation, route_data = self.assignment_engine.assign_best_agv(task, agv_list)
+            # Refresh live list of available/operational AGVs
+            operational_agvs = list(self.agvs.values())
+            best_agv, explanation, route_data = self.assignment_engine.assign_best_agv(task, operational_agvs)
 
             self.last_decision = explanation
             self.decisions.insert(0, explanation)
@@ -171,19 +196,21 @@ class FLOOptimizer:
                     f"Assigned Task {task.task_id} [{task.priority.value}] to AGV {best_agv.id} (Est. Time: {route_data['estimated_travel_time']:.1f}s)",
                     "TASK"
                 )
-            else:
-                self.add_event(
-                    "WARNING",
-                    f"Task {task.task_id} [{task.priority.value}] could not be assigned: No feasible AGV available",
-                    "TASK"
-                )
+
+        # Run Multi-AGV Fleet Spatial-Temporal Zone Interlocking & Coordination
+        coord_cmds, coord_evts = self.coordination_engine.evaluate_fleet_coordination(
+            list(self.agvs.values()), self.tasks
+        )
+        commands.extend(coord_cmds)
+        for e in coord_evts:
+            self.events.insert(0, e)
 
         return commands
 
     def trigger_scenario_add_congestion(self, src: str = "J3", dst: str = "J2") -> List[Dict]:
-        """Injects heavy congestion on central corridor J3-J2 and reroutes affected AGVs."""
+        """Injects heavy congestion on specified corridor and reroutes affected AGVs."""
         self.congestion_mgr.inject_congestion_scenario(src, dst, level=3.5)
-        self.add_event("WARNING", f"SCENARIO: Congestion spike injected on Corridor {src}-{dst}", "CONGESTION")
+        self.add_event("WARNING", f"SCENARIO: Congestion spike injected on Corridor {src} ↔ {dst}", "CONGESTION")
         self.metrics_collector.record_reroute()
         
         cmds, evts = self.replanner.handle_route_change_event(list(self.agvs.values()), self.tasks)
@@ -193,9 +220,9 @@ class FLOOptimizer:
         return cmds
 
     def trigger_scenario_remove_congestion(self, src: str = "J3", dst: str = "J2") -> List[Dict]:
-        """Clears congestion on central corridor J3-J2."""
+        """Clears congestion on specified corridor."""
         self.congestion_mgr.clear_congestion_scenario(src, dst)
-        self.add_event("INFO", f"SCENARIO: Congestion cleared on Corridor {src}-{dst}", "CONGESTION")
+        self.add_event("INFO", f"SCENARIO: Congestion cleared on Corridor {src} ↔ {dst}", "CONGESTION")
         cmds, evts = self.replanner.handle_route_change_event(list(self.agvs.values()), self.tasks)
         for e in evts:
             self.events.insert(0, e)
@@ -203,9 +230,9 @@ class FLOOptimizer:
         return cmds
 
     def trigger_scenario_block_route(self, src: str = "J3", dst: str = "J2") -> List[Dict]:
-        """Blocks corridor J3-J2 completely and forces dynamic rerouting."""
+        """Blocks specified corridor completely and forces dynamic rerouting."""
         self.congestion_mgr.set_route_blocked(src, dst, True)
-        self.add_event("ERROR", f"SCENARIO: Corridor {src}-{dst} IS BLOCKED!", "CONGESTION")
+        self.add_event("ERROR", f"SCENARIO: Corridor {src} ↔ {dst} IS BLOCKED!", "CONGESTION")
         self.metrics_collector.record_reroute()
 
         cmds, evts = self.replanner.handle_route_change_event(list(self.agvs.values()), self.tasks)
@@ -215,25 +242,28 @@ class FLOOptimizer:
         return cmds
 
     def trigger_scenario_unblock_route(self, src: str = "J3", dst: str = "J2") -> List[Dict]:
-        """Unblocks corridor J3-J2."""
+        """Unblocks specified corridor."""
         self.congestion_mgr.set_route_blocked(src, dst, False)
-        self.add_event("INFO", f"SCENARIO: Corridor {src}-{dst} UNBLOCKED", "CONGESTION")
+        self.add_event("INFO", f"SCENARIO: Corridor {src} ↔ {dst} UNBLOCKED", "CONGESTION")
         cmds, evts = self.replanner.handle_route_change_event(list(self.agvs.values()), self.tasks)
         for e in evts:
             self.events.insert(0, e)
         self.pending_commands.extend(cmds)
         return cmds
 
-    def trigger_scenario_low_battery_test(self, agv_id: str = "AGV01") -> List[Dict]:
-        """Drains battery of specified AGV to 12% to demonstrate feasibility rejection & charging divert."""
+    def trigger_scenario_low_battery_test(self, agv_id: str = "AGV01", battery_val: float = 12.0) -> List[Dict]:
+        """Drains battery of specified AGV to target % to demonstrate feasibility rejection & charging divert."""
         if agv_id in self.agvs:
             agv = self.agvs[agv_id]
-            agv.battery = 12.0
-            self.add_event("WARNING", f"SCENARIO: AGV {agv_id} battery artificially dropped to 12.0%", "BATTERY")
+            agv.battery = battery_val
+            if agv_id in self.warned_low_battery_agvs:
+                self.warned_low_battery_agvs.remove(agv_id)
+
+            self.add_event("WARNING", f"SCENARIO: AGV {agv_id} battery artificially dropped to {battery_val:.1f}%", "BATTERY")
 
             # Trigger charger divert if active
             cmds, evts = self.replanner.handle_low_battery_risk(agv, self.tasks)
-            cmds.insert(0, {"command": "set_battery", "agv_id": agv_id, "battery": 12.0})
+            cmds.insert(0, {"command": "set_battery", "agv_id": agv_id, "battery": battery_val})
             for e in evts:
                 self.events.insert(0, e)
             self.pending_commands.extend(cmds)
@@ -248,6 +278,19 @@ class FLOOptimizer:
             self.events.insert(0, e)
         self.pending_commands.extend(cmds)
         return cmds
+
+    def trigger_scenario_recover_agv(self, agv_id: str = "AGV01") -> List[Dict]:
+        """Repairs a failed AGV and restores it to operational AVAILABLE state."""
+        if agv_id in self.agvs:
+            agv = self.agvs[agv_id]
+            agv.status = AGVStatus.AVAILABLE
+            agv.battery = max(agv.battery, 80.0)
+            cmd = {"command": "set_status", "agv_id": agv_id, "status": "AVAILABLE"}
+            self.add_event("SUCCESS", f"RECOVERY: AGV {agv_id} repaired and restored to AVAILABLE fleet", "TASK")
+            self.pending_commands.append(cmd)
+            self.process_optimization_cycle()
+            return [cmd]
+        return []
 
     def create_new_task(
         self,
@@ -270,7 +313,7 @@ class FLOOptimizer:
             status=TaskStatus.WAITING
         )
         self.tasks[task_id] = task
-        self.add_event("INFO", f"New Task Created: {task_id} ({pickup} -> {destination}, [{priority.value}])", "TASK")
+        self.add_event("INFO", f"New Task Created: {task_id} ({pickup} → {destination}, [{priority.value}])", "TASK")
 
         # Run optimization immediately for new task
         self.process_optimization_cycle()

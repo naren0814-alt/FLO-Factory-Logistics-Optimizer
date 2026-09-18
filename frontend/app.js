@@ -183,7 +183,6 @@ function renderCanvas() {
 
   // 4. Draw AGVs with Offset if Multiple Bots at the Same Node/Position
   if (simState.agvs) {
-    // Group AGVs by proximity (~20px grid binning)
     const posGroups = {};
     simState.agvs.forEach(agv => {
       const key = `${Math.round(agv.x / 20)}_${Math.round(agv.y / 20)}`;
@@ -296,7 +295,7 @@ function renderTaskTable() {
   const tbody = document.getElementById('taskTableBody');
   if (!tbody || !simState.tasks) return;
 
-  // Filter out COMPLETED tasks from the active queue display so queue stays clean!
+  // Filter out COMPLETED tasks from active queue table
   const activeTasks = simState.tasks.filter(t => t.status !== 'COMPLETED');
 
   if (activeTasks.length === 0) {
@@ -331,54 +330,96 @@ function renderEvents() {
 }
 
 /* ----------------------------------------------------
- * SCENARIO CONTROLLERS
+ * SCENARIO CONTROLLERS & MODAL HANDLERS
  * ---------------------------------------------------- */
-async function triggerAddCongestion() {
+
+function openModal(id) {
+  const el = document.getElementById(id);
+  if (el) el.style.display = 'flex';
+}
+
+function closeModal(id) {
+  const el = document.getElementById(id);
+  if (el) el.style.display = 'none';
+}
+
+function openNewTaskModal() { openModal('taskModal'); }
+function closeNewTaskModal() { closeModal('taskModal'); }
+
+function openCongestionModal() { openModal('congestionModal'); }
+function openBlockRouteModal() { openModal('blockModal'); }
+function openLowBatteryModal() { openModal('lowBatteryModal'); }
+function openFailAgvModal() { openModal('failModal'); }
+
+async function submitAddCongestion() {
+  const corridor = document.getElementById('congCorridor').value.split('_');
   await fetch(`${CORE_URL}/api/scenario/add_congestion`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ src: 'J3', dst: 'J2' })
+    body: JSON.stringify({ src: corridor[0], dst: corridor[1] })
   });
+  closeModal('congestionModal');
 }
 
-async function triggerRemoveCongestion() {
+async function submitRemoveCongestion() {
+  const corridor = document.getElementById('congCorridor').value.split('_');
   await fetch(`${CORE_URL}/api/scenario/remove_congestion`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ src: 'J3', dst: 'J2' })
+    body: JSON.stringify({ src: corridor[0], dst: corridor[1] })
   });
+  closeModal('congestionModal');
 }
 
-async function triggerBlockRoute() {
+async function submitBlockRoute() {
+  const corridor = document.getElementById('blockCorridor').value.split('_');
   await fetch(`${CORE_URL}/api/scenario/block_route`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ src: 'J3', dst: 'J2' })
+    body: JSON.stringify({ src: corridor[0], dst: corridor[1] })
   });
+  closeModal('blockModal');
 }
 
-async function triggerUnblockRoute() {
+async function submitUnblockRoute() {
+  const corridor = document.getElementById('blockCorridor').value.split('_');
   await fetch(`${CORE_URL}/api/scenario/unblock_route`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ src: 'J3', dst: 'J2' })
+    body: JSON.stringify({ src: corridor[0], dst: corridor[1] })
   });
+  closeModal('blockModal');
 }
 
-async function triggerLowBatteryTest() {
+async function submitLowBattery() {
+  const agv_id = document.getElementById('batAgv').value;
+  const battery = parseFloat(document.getElementById('batLevel').value);
   await fetch(`${CORE_URL}/api/scenario/low_battery_test`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ agv_id: 'AGV01' })
+    body: JSON.stringify({ agv_id, battery })
   });
+  closeModal('lowBatteryModal');
 }
 
-async function triggerFailAGV() {
+async function submitFailAGV() {
+  const agv_id = document.getElementById('failAgv').value;
   await fetch(`${CORE_URL}/api/scenario/fail_agv`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ agv_id: 'AGV01' })
+    body: JSON.stringify({ agv_id })
   });
+  closeModal('failModal');
+}
+
+async function submitRecoverAGV() {
+  const agv_id = document.getElementById('failAgv').value;
+  await fetch(`${CORE_URL}/api/scenario/recover_agv`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ agv_id })
+  });
+  closeModal('failModal');
 }
 
 async function triggerUrgentTask() {
@@ -393,14 +434,6 @@ async function triggerUrgentTask() {
       deadline_seconds: 120.0
     })
   });
-}
-
-function openNewTaskModal() {
-  document.getElementById('taskModal').style.display = 'flex';
-}
-
-function closeNewTaskModal() {
-  document.getElementById('taskModal').style.display = 'none';
 }
 
 async function submitNewTask(e) {

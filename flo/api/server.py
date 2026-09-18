@@ -38,7 +38,8 @@ class TaskCreateRequest(BaseModel):
 class ScenarioRequest(BaseModel):
     src: str = "J3"
     dst: str = "J2"
-    agv_id: Optional[str] = "AGV01"
+    agv_id: str = "AGV01"
+    battery: float = 12.0
 
 @app.get("/api/state")
 def get_flo_state():
@@ -106,14 +107,20 @@ def scenario_unblock_route(req: ScenarioRequest):
 @app.post("/api/scenario/low_battery_test")
 def scenario_low_battery_test(req: ScenarioRequest):
     agv_id = req.agv_id or "AGV01"
-    cmds = optimizer.trigger_scenario_low_battery_test(agv_id)
-    return {"status": "SUCCESS", "message": f"Low battery triggered for {agv_id}", "commands": cmds}
+    cmds = optimizer.trigger_scenario_low_battery_test(agv_id, req.battery)
+    return {"status": "SUCCESS", "message": f"Low battery ({req.battery:.1f}%) triggered for {agv_id}", "commands": cmds}
 
 @app.post("/api/scenario/fail_agv")
 def scenario_fail_agv(req: ScenarioRequest):
     agv_id = req.agv_id or "AGV01"
     cmds = optimizer.trigger_scenario_fail_agv(agv_id)
     return {"status": "SUCCESS", "message": f"AGV {agv_id} marked as FAILED", "commands": cmds}
+
+@app.post("/api/scenario/recover_agv")
+def scenario_recover_agv(req: ScenarioRequest):
+    agv_id = req.agv_id or "AGV01"
+    cmds = optimizer.trigger_scenario_recover_agv(agv_id)
+    return {"status": "SUCCESS", "message": f"AGV {agv_id} recovered and returned to fleet", "commands": cmds}
 
 @app.get("/core_view", response_class=HTMLResponse)
 def get_core_view_page():

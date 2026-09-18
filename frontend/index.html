@@ -1,4 +1,3 @@
-```html
 <!DOCTYPE html>
 <html lang="en">
 
@@ -32,7 +31,7 @@
 
       <div class="status-badge">
         <span class="status-dot"></span>
-        <span>CONNECTED</span>
+        <span>CONNECTED TO CORE</span>
       </div>
 
       <button class="btn btn-secondary" onclick="fetch(`${FACTORY_URL}/api/control/pause`, {method:'POST'})">
@@ -51,14 +50,14 @@
   </nav>
 
 
-  <!-- Main -->
+  <!-- Main Container -->
   <main class="main-container">
 
-    <!-- Factory Floor -->
+    <!-- Factory Floor Canvas -->
     <section class="card factory-card">
 
       <div class="card-title">
-        <span>Factory Floor</span>
+        <span>Factory Floor Layout (Live 2D Physics)</span>
         <span class="small-info">AGV Speed: 1.5 units/tick</span>
       </div>
 
@@ -104,9 +103,7 @@
         </div>
 
         <div class="table-wrapper">
-
           <table>
-
             <thead>
               <tr>
                 <th>AGV</th>
@@ -115,28 +112,23 @@
                 <th>Task</th>
               </tr>
             </thead>
-
             <tbody id="agvTableBody">
             </tbody>
-
           </table>
-
         </div>
 
       </section>
 
 
-      <!-- Tasks -->
+      <!-- Material Tasks -->
       <section class="card table-card">
 
         <div class="card-title">
-          Material Tasks
+          Material Tasks (Active Queue)
         </div>
 
         <div class="table-wrapper">
-
           <table>
-
             <thead>
               <tr>
                 <th>Task ID</th>
@@ -146,12 +138,9 @@
                 <th>Assigned</th>
               </tr>
             </thead>
-
             <tbody id="taskTableBody">
             </tbody>
-
           </table>
-
         </div>
 
       </section>
@@ -159,7 +148,7 @@
     </aside>
 
 
-    <!-- Bottom -->
+    <!-- Bottom Area -->
     <div class="bottom-container">
 
       <!-- Event Log -->
@@ -167,7 +156,7 @@
 
         <div class="card-title">
           <span>Event Log</span>
-          <span class="small-info">Live system activity</span>
+          <span class="small-info">Live System Activity & Coordination</span>
         </div>
 
         <div class="event-log" id="eventLog">
@@ -176,11 +165,11 @@
       </section>
 
 
-      <!-- Controls -->
+      <!-- Scenario Injectors Control Panel -->
       <section class="card">
 
         <div class="card-title">
-          Test Scenarios
+          Interactive Scenario Controls
         </div>
 
         <div class="control-panel-grid">
@@ -190,31 +179,23 @@
           </button>
 
           <button class="btn btn-danger" onclick="triggerUrgentTask()">
-            Urgent Task
+            ⚡ Urgent Task
           </button>
 
-          <button class="btn btn-warning" onclick="triggerAddCongestion()">
-            Add Congestion
+          <button class="btn btn-warning" onclick="openCongestionModal()">
+            ⚠️ Route Congestion
           </button>
 
-          <button class="btn btn-secondary" onclick="triggerRemoveCongestion()">
-            Clear Congestion
+          <button class="btn btn-danger" onclick="openBlockRouteModal()">
+            🛑 Block Route
           </button>
 
-          <button class="btn btn-danger" onclick="triggerBlockRoute()">
-            Block Route
+          <button class="btn btn-warning" onclick="openLowBatteryModal()">
+            🪫 Low Battery
           </button>
 
-          <button class="btn btn-secondary" onclick="triggerUnblockRoute()">
-            Unblock Route
-          </button>
-
-          <button class="btn btn-warning" onclick="triggerLowBatteryTest()">
-            Low Battery
-          </button>
-
-          <button class="btn btn-danger" onclick="triggerFailAGV()">
-            Fail AGV
+          <button class="btn btn-danger" onclick="openFailAgvModal()">
+            💥 AGV Breakdown
           </button>
 
         </div>
@@ -226,44 +207,33 @@
   </main>
 
 
-  <!-- New Task Modal -->
+  <!-- Modal 1: New Task Modal -->
   <div class="modal-overlay" id="taskModal" style="display: none;">
-
     <div class="modal-content">
-
-      <h3>Configure New Task</h3>
-
+      <h3>Configure New Material Task</h3>
       <form onsubmit="submitNewTask(event)">
-
         <div class="form-group">
           <label for="taskPickup">Pickup Location</label>
-
           <select id="taskPickup" class="form-control">
-            <option value="WAREHOUSE">Warehouse</option>
+            <option value="WAREHOUSE">Warehouse (Raw Material)</option>
             <option value="M1">Machine 1</option>
             <option value="M2">Machine 2</option>
             <option value="ASSY">Assembly Station</option>
           </select>
         </div>
 
-
         <div class="form-group">
           <label for="taskDest">Destination Location</label>
-
           <select id="taskDest" class="form-control">
             <option value="M1">Machine 1</option>
             <option value="M2">Machine 2</option>
             <option value="ASSY">Assembly Station</option>
-            <option value="DISPATCH" selected>
-              Dispatch / Finished Goods
-            </option>
+            <option value="DISPATCH" selected>Dispatch / Finished Goods</option>
           </select>
         </div>
 
-
         <div class="form-group">
           <label for="taskPriority">Task Priority</label>
-
           <select id="taskPriority" class="form-control">
             <option value="LOW">Low</option>
             <option value="NORMAL" selected>Normal</option>
@@ -272,36 +242,113 @@
           </select>
         </div>
 
-
         <div class="form-group">
           <label for="taskWeight">Payload Weight (kg)</label>
-
           <input type="number" id="taskWeight" class="form-control" value="20" min="5" max="60">
         </div>
 
-
         <div class="modal-actions">
-
-          <button type="button" class="btn btn-secondary" onclick="closeNewTaskModal()">
-            Cancel
-          </button>
-
-          <button type="submit" class="btn btn-primary">
-            Submit Task
-          </button>
-
+          <button type="button" class="btn btn-secondary" onclick="closeModal('taskModal')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Submit Task</button>
         </div>
-
       </form>
-
     </div>
-
   </div>
 
+  <!-- Modal 2: Route Congestion Selection Modal -->
+  <div class="modal-overlay" id="congestionModal" style="display: none;">
+    <div class="modal-content">
+      <h3>Select Corridor for Congestion Scenario</h3>
+      <div class="form-group">
+        <label for="congCorridor">Target Corridor</label>
+        <select id="congCorridor" class="form-control">
+          <option value="J3_J2">J3 ↔ J2 (Central High-Traffic Corridor)</option>
+          <option value="J1_J2">J1 ↔ J2 (Top Highway Corridor)</option>
+          <option value="J1_M1">J1 ↔ M1 (Machine 1 Approach)</option>
+          <option value="M1_J4">M1 ↔ J4 (South Bypass Entry)</option>
+          <option value="J5_ASSY">J5 ↔ ASSY (Pre-Assembly Corridor)</option>
+          <option value="ASSY_DISPATCH">ASSY ↔ DISPATCH (Dispatch Corridor)</option>
+        </select>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('congestionModal')">Cancel</button>
+        <button type="button" class="btn btn-secondary" onclick="submitRemoveCongestion()">Clear Congestion</button>
+        <button type="button" class="btn btn-warning" onclick="submitAddCongestion()">Inject Congestion</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 3: Route Blockage Selection Modal -->
+  <div class="modal-overlay" id="blockModal" style="display: none;">
+    <div class="modal-content">
+      <h3>Select Corridor for Blockage Scenario</h3>
+      <div class="form-group">
+        <label for="blockCorridor">Target Corridor</label>
+        <select id="blockCorridor" class="form-control">
+          <option value="J3_J2">J3 ↔ J2 (Central Corridor)</option>
+          <option value="J1_J2">J1 ↔ J2 (Top Highway)</option>
+          <option value="J1_M1">J1 ↔ M1 (Machine 1)</option>
+          <option value="M1_J4">M1 ↔ J4 (South Bypass)</option>
+          <option value="J5_ASSY">J5 ↔ ASSY (Assembly Approach)</option>
+        </select>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('blockModal')">Cancel</button>
+        <button type="button" class="btn btn-secondary" onclick="submitUnblockRoute()">Unblock Corridor</button>
+        <button type="button" class="btn btn-danger" onclick="submitBlockRoute()">Block Corridor</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 4: Low Battery Selection Modal -->
+  <div class="modal-overlay" id="lowBatteryModal" style="display: none;">
+    <div class="modal-content">
+      <h3>Inject Low Battery Scenario</h3>
+      <div class="form-group">
+        <label for="batAgv">Select AGV</label>
+        <select id="batAgv" class="form-control">
+          <option value="AGV01">AGV01</option>
+          <option value="AGV02">AGV02</option>
+          <option value="AGV03">AGV03</option>
+          <option value="AGV04">AGV04</option>
+          <option value="AGV05">AGV05</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="batLevel">Battery Percentage (%)</label>
+        <input type="number" id="batLevel" class="form-control" value="12" min="5" max="25">
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('lowBatteryModal')">Cancel</button>
+        <button type="button" class="btn btn-warning" onclick="submitLowBattery()">Apply Low Battery</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 5: AGV Failure Selection Modal -->
+  <div class="modal-overlay" id="failModal" style="display: none;">
+    <div class="modal-content">
+      <h3>Select AGV for Breakdown / Recovery</h3>
+      <div class="form-group">
+        <label for="failAgv">Select AGV</label>
+        <select id="failAgv" class="form-control">
+          <option value="AGV01">AGV01</option>
+          <option value="AGV02">AGV02</option>
+          <option value="AGV03">AGV03</option>
+          <option value="AGV04">AGV04</option>
+          <option value="AGV05">AGV05</option>
+        </select>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('failModal')">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="submitRecoverAGV()">Recover AGV</button>
+        <button type="button" class="btn btn-danger" onclick="submitFailAGV()">Fail AGV</button>
+      </div>
+    </div>
+  </div>
 
   <script src="/static/app.js"></script>
 
 </body>
 
 </html>
-```

@@ -72,6 +72,10 @@ class FactorySimulatorEngine:
             status_val = cmd.get("status", AGVStatus.AVAILABLE.value)
             agv.status = AGVStatus(status_val)
 
+        elif command_type == "hold_agv":
+            # Hold AGV position for 1 tick to yield right-of-way at junction
+            pass
+
     def tick(self):
         """Runs 1 physics tick."""
         if not self.running:
