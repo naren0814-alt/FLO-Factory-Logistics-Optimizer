@@ -133,7 +133,9 @@
   </div>
 
   <script>
-    const CORE_URL = 'http://127.0.0.1:8000';
+    const CORE_URL = (window.location.port === '8001')
+      ? `${window.location.protocol}//${window.location.hostname}:8000`
+      : window.location.origin;
 
     async function fetchCoreState() {
       try {

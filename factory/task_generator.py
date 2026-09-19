@@ -12,6 +12,8 @@ def get_initial_tasks() -> Dict[str, TaskModel]:
         ("T003", "M1", "ASSY", TaskPriority.HIGH, 25.0, 240.0),
         ("T004", "M2", "ASSY", TaskPriority.NORMAL, 20.0, 300.0),
         ("T005", "ASSY", "DISPATCH", TaskPriority.NORMAL, 35.0, 180.0),
+        ("T006", "WAREHOUSE", "ASSY", TaskPriority.HIGH, 18.0, 250.0),
+        ("T007", "M1", "DISPATCH", TaskPriority.URGENT, 22.0, 200.0),
     ]
 
     tasks = {}

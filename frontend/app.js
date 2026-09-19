@@ -3,8 +3,17 @@
  * Canvas 2D Renderer & Real-time State Controller (Optimized & Responsive)
  */
 
-const CORE_URL = 'http://127.0.0.1:8000';
-const FACTORY_URL = 'http://127.0.0.1:8001';
+// Dynamic URL resolution for production deployment and local development fallback
+const defaultCorePort = '8000';
+const defaultFactoryPort = '8001';
+
+const CORE_URL = (window.location.port === defaultFactoryPort)
+  ? `${window.location.protocol}//${window.location.hostname}:${defaultCorePort}`
+  : window.location.origin;
+
+const FACTORY_URL = (window.location.port === defaultCorePort)
+  ? `${window.location.protocol}//${window.location.hostname}:${defaultFactoryPort}`
+  : window.location.origin;
 
 let canvas, ctx;
 let simState = { agvs: [], tasks: [] };

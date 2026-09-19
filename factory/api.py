@@ -64,6 +64,12 @@ def get_simulator_state():
 async def create_task_simulator(req: TaskCreateRequest):
     """Forwards task creation request to FLO Core Engine and registers it locally."""
     try:
+        from flo.api.server import create_task as core_create_task
+        return core_create_task(req)
+    except Exception:
+        pass
+
+    try:
         async with httpx.AsyncClient(timeout=3.0) as client:
             resp = await client.post(f"{CORE_URL}/api/task/create", json=req.model_dump())
             if resp.status_code == 200:

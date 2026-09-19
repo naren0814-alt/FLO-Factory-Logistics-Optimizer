@@ -3,11 +3,23 @@ FLO - Factory Logistics Optimizer Settings & Configuration
 Centralized parameters for simulation, routing, scoring, and ports.
 """
 
-# Server Ports
-CORE_PORT = 8000
-FACTORY_PORT = 8001
-CORE_URL = f"http://127.0.0.1:{CORE_PORT}"
-FACTORY_URL = f"http://127.0.0.1:{FACTORY_PORT}"
+import os
+
+# Server Ports & Production Settings
+PORT = int(os.getenv("PORT", "8000"))
+CORE_PORT = int(os.getenv("CORE_PORT", "8000"))
+FACTORY_PORT = int(os.getenv("FACTORY_PORT", "8001"))
+
+# Environment-configurable URLs (fallback to localhost ports for local dev)
+if "PORT" in os.environ:
+    DEFAULT_CORE_URL = f"http://127.0.0.1:{PORT}"
+    DEFAULT_FACTORY_URL = f"http://127.0.0.1:{PORT}"
+else:
+    DEFAULT_CORE_URL = f"http://127.0.0.1:{CORE_PORT}"
+    DEFAULT_FACTORY_URL = f"http://127.0.0.1:{FACTORY_PORT}"
+
+CORE_URL = os.getenv("CORE_URL", DEFAULT_CORE_URL)
+FACTORY_URL = os.getenv("FACTORY_URL", DEFAULT_FACTORY_URL)
 
 # Scoring Weights (Stage 2 Multi-Factor Score)
 # Lower score = better candidate

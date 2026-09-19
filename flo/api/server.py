@@ -82,7 +82,13 @@ def create_task(req: TaskCreateRequest):
         weight=req.weight,
         deadline_seconds=req.deadline_seconds
     )
-    return {"status": "SUCCESS", "task": task.model_dump()}
+    task_data = task.model_dump()
+    try:
+        from factory.api import simulator
+        simulator.execute_command({"command": "create_task", "task": task_data})
+    except Exception:
+        pass
+    return {"status": "SUCCESS", "task": task_data}
 
 @app.post("/api/scenario/add_congestion")
 def scenario_add_congestion(req: ScenarioRequest):
