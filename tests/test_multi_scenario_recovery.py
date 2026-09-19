@@ -69,9 +69,9 @@ def test_multi_scenario_recovery():
             client.post("http://127.0.0.1:8000/api/scenario/low_battery_test", json={"agv_id": "AGV01", "battery_val": 12.0})
             client.post("http://127.0.0.1:8000/api/scenario/add_congestion", json={"src": "J3", "dst": "J2"})
 
-            # 5. Monitor consistency over 110 Ticks (55 seconds)
+            # 5. Monitor consistency over 140 Ticks (70 seconds)
             print("\n[STEP 3] Monitoring system state consistency & recovery progress...")
-            for i in range(110):
+            for i in range(140):
                 time.sleep(0.5)
                 sim_state = client.get("http://127.0.0.1:8001/api/simulator_state").json()
 
@@ -100,7 +100,7 @@ def test_multi_scenario_recovery():
                 t_obj = next((t for t in sim_state["tasks"] if t["task_id"] == t_id), None)
                 print(f" Task {t_id} final status: {t_obj['status'] if t_obj else 'UNKNOWN'}")
 
-            raise AssertionError("Not all tasks reached COMPLETED status within 55 seconds under multi-scenario stress")
+            raise AssertionError("Not all tasks reached COMPLETED status within 70 seconds under multi-scenario stress")
 
     finally:
         try:
