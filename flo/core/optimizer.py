@@ -84,6 +84,61 @@ class FLOOptimizer:
         if len(self.events) > 50:
             self.events.pop()
 
+    def recover_task(self, task: TaskModel, reason: str = "AGV Failure/Stale State"):
+        """Centralized task recovery mechanism to release stranded assignments."""
+        old_agv_id = task.assigned_agv_id
+        task.status = TaskStatus.WAITING
+        task.assigned_agv_id = None
+
+        if old_agv_id and old_agv_id in self.agvs:
+            agv = self.agvs[old_agv_id]
+            if agv.current_task_id == task.task_id:
+                agv.current_task_id = None
+                agv.current_route = []
+                agv.route_index = 0
+                if agv.status not in [AGVStatus.FAILED, AGVStatus.LOW_BATTERY, AGVStatus.CHARGING]:
+                    agv.status = AGVStatus.AVAILABLE
+
+        cmd = {"command": "release_task", "task_id": task.task_id, "agv_id": old_agv_id}
+        if cmd not in self.pending_commands:
+            self.pending_commands.append(cmd)
+
+        self.add_event(
+            "WARNING",
+            f"RECOVERY: Task {task.task_id} released from {old_agv_id or 'unknown'} -> Requeued to WAITING ({reason})",
+            "TASK"
+        )
+
+    def run_safety_audit(self):
+        """
+        Lightweight two-way consistency check:
+        1. Ensures no task remains ASSIGNED to a FAILED, low-battery, or mismatched AGV.
+        2. Ensures no FAILED AGV owns an active task.
+        """
+        # Audit Tasks
+        for task in list(self.tasks.values()):
+            if task.status in [TaskStatus.ASSIGNED, TaskStatus.MOVING_TO_PICKUP, TaskStatus.IN_TRANSIT]:
+                if not task.assigned_agv_id or task.assigned_agv_id not in self.agvs:
+                    self.recover_task(task, "Assigned AGV missing")
+                else:
+                    agv = self.agvs[task.assigned_agv_id]
+                    if agv.status == AGVStatus.FAILED:
+                        self.recover_task(task, "Assigned AGV is FAILED")
+                    elif agv.status in [AGVStatus.LOW_BATTERY, AGVStatus.CHARGING] and not agv.carrying_material:
+                        self.recover_task(task, "AGV diverting to charger without material")
+                    elif agv.current_task_id and agv.current_task_id != task.task_id:
+                        self.recover_task(task, f"AGV current_task_id mismatch ({agv.current_task_id} != {task.task_id})")
+
+        # Audit AGVs
+        for agv in list(self.agvs.values()):
+            if agv.status == AGVStatus.FAILED and agv.current_task_id:
+                t_id = agv.current_task_id
+                agv.current_task_id = None
+                agv.current_route = []
+                agv.route_index = 0
+                if t_id in self.tasks:
+                    self.recover_task(self.tasks[t_id], "AGV in FAILED status")
+
     def sync_factory_state(self, agv_list: List[Dict], task_list: List[Dict], edge_list: Optional[List[Dict]] = None):
         """Synchronizes live state from Factory Simulator into FLO Core Engine."""
         for a_data in agv_list:
@@ -95,8 +150,12 @@ class FLOOptimizer:
                 agv.current_node = a_data.get("current_node", agv.current_node)
                 agv.x = a_data.get("x", agv.x)
                 agv.y = a_data.get("y", agv.y)
-                agv.battery = a_data.get("battery", agv.battery)
-                agv.status = AGVStatus(a_data.get("status", agv.status.value))
+                new_status = AGVStatus(a_data.get("status", agv.status.value))
+                if agv.status == AGVStatus.FAILED and new_status != AGVStatus.FAILED:
+                    pass  # Retain FAILED status in Core until explicitly recovered
+                else:
+                    agv.status = new_status
+
                 agv.carrying_material = a_data.get("carrying_material", agv.carrying_material)
                 agv.charging = a_data.get("charging", agv.charging)
 
@@ -110,15 +169,41 @@ class FLOOptimizer:
                 self.tasks[t_id] = TaskModel(**t_data)
             else:
                 task = self.tasks[t_id]
-                task.status = TaskStatus(t_data.get("status", task.status.value))
-                task.assigned_agv_id = t_data.get("assigned_agv_id", task.assigned_agv_id)
+                prev_status = task.status
+                sim_status = TaskStatus(t_data.get("status", task.status.value))
+                sim_agv_id = t_data.get("assigned_agv_id", task.assigned_agv_id)
+
+                # Prevent simulator from overwriting a recovered WAITING task back to FAILED AGV
+                if sim_agv_id and sim_agv_id in self.agvs and self.agvs[sim_agv_id].status == AGVStatus.FAILED:
+                    task.status = TaskStatus.WAITING
+                    task.assigned_agv_id = None
+                else:
+                    task.status = sim_status
+                    task.assigned_agv_id = sim_agv_id
+
+                # Record task completion once
                 if task.status == TaskStatus.COMPLETED and task.actual_completion_time is None:
                     task.actual_completion_time = datetime.now().timestamp()
+                    print(f"[CORE] Completion recorded for {task.task_id}")
+                    if task.assigned_agv_id:
+                        print(f"[CORE] Reservation released for AGV {task.assigned_agv_id}")
+                        if task.assigned_agv_id in self.agvs:
+                            c_agv = self.agvs[task.assigned_agv_id]
+                            if c_agv.current_task_id == task.task_id:
+                                c_agv.current_task_id = None
+                                c_agv.status = AGVStatus.AVAILABLE
+                                c_agv.current_route = []
+                                c_agv.route_index = 0
+
                     self.metrics_collector.record_task_completed(
                         delivery_time=task.actual_completion_time - task.creation_time if task.creation_time > 0 else 45.0,
                         distance=300.0,
                         energy=5.0
                     )
+                    self.add_event("SUCCESS", f"TASK COMPLETED: {task.task_id} ({task.pickup} -> {task.destination})", "TASK")
+
+        # Run Safety Audit to catch any state discrepancies
+        self.run_safety_audit()
 
         # Update edge congestion
         self.congestion_mgr.update_live_congestion(list(self.agvs.values()))
@@ -133,7 +218,7 @@ class FLOOptimizer:
                     self.add_event("WARNING", f"AGV {agv.id} low battery detected ({agv.battery:.1f}%) — initiating charging divert", "BATTERY")
                     self.metrics_collector.record_battery_intervention()
 
-            # Auto-charge idle AVAILABLE AGVs with low battery (< 40%) so they don't block pending tasks
+            # Auto-charge idle AVAILABLE AGVs with low battery (< 40%)
             elif agv.status == AGVStatus.AVAILABLE and agv.battery < 40.0 and not agv.charging:
                 if agv.id not in self.warned_low_battery_agvs:
                     self.warned_low_battery_agvs.add(agv.id)
@@ -144,24 +229,28 @@ class FLOOptimizer:
     def process_optimization_cycle(self) -> List[Dict]:
         """
         Main Optimization Loop:
-        1. Evaluates pending tasks.
-        2. Assigns best feasible AGV using Stage 1 & Stage 2 optimization.
-        3. Evaluates multi-AGV spatial-temporal zone coordination.
-        4. Returns command list to execute in Factory Simulator.
+        1. Runs safety audit for consistency.
+        2. Evaluates pending tasks.
+        3. Assigns best feasible AGV using Stage 1 & Stage 2 optimization.
+        4. Evaluates multi-AGV spatial-temporal zone coordination.
+        5. Returns command list to execute in Factory Simulator.
         """
         commands = list(self.pending_commands)
         self.pending_commands.clear()
 
-        # Find pending tasks
-        pending_tasks = [t for t in self.tasks.values() if t.status == TaskStatus.WAITING]
+        # Run Safety Audit to clean up any orphaned or stale assignments
+        self.run_safety_audit()
+
+        # Find pending tasks (WAITING or REASSIGNING)
+        pending_tasks = [t for t in self.tasks.values() if t.status in [TaskStatus.WAITING, TaskStatus.REASSIGNING]]
         priority_order = {TaskPriority.URGENT: 0, TaskPriority.HIGH: 1, TaskPriority.NORMAL: 2, TaskPriority.LOW: 3}
-        pending_tasks.sort(key=lambda x: priority_order.get(x.priority, 99))
+        pending_tasks.sort(key=lambda x: (priority_order.get(x.priority, 99), x.creation_time))
 
         self.metrics_collector.update_pending_count(len(pending_tasks))
 
         for task in pending_tasks:
             # Refresh live list of available/operational AGVs
-            operational_agvs = list(self.agvs.values())
+            operational_agvs = [a for a in self.agvs.values() if a.status != AGVStatus.FAILED]
             best_agv, explanation, route_data = self.assignment_engine.assign_best_agv(task, operational_agvs)
 
             self.last_decision = explanation
@@ -180,6 +269,8 @@ class FLOOptimizer:
                 best_agv.current_route = route_data["route"]
                 best_agv.route_index = 0
                 best_agv.status = AGVStatus.MOVING_TO_PICKUP
+                best_agv.target_charger = None
+                best_agv.charging = False
 
                 cmd = {
                     "command": "assign_task",
@@ -217,7 +308,8 @@ class FLOOptimizer:
         for e in evts:
             self.events.insert(0, e)
         self.pending_commands.extend(cmds)
-        return cmds
+        opt_cmds = self.process_optimization_cycle()
+        return opt_cmds
 
     def trigger_scenario_remove_congestion(self, src: str = "J3", dst: str = "J2") -> List[Dict]:
         """Clears congestion on specified corridor."""
@@ -227,7 +319,8 @@ class FLOOptimizer:
         for e in evts:
             self.events.insert(0, e)
         self.pending_commands.extend(cmds)
-        return cmds
+        opt_cmds = self.process_optimization_cycle()
+        return opt_cmds
 
     def trigger_scenario_block_route(self, src: str = "J3", dst: str = "J2") -> List[Dict]:
         """Blocks specified corridor completely and forces dynamic rerouting."""
@@ -239,7 +332,8 @@ class FLOOptimizer:
         for e in evts:
             self.events.insert(0, e)
         self.pending_commands.extend(cmds)
-        return cmds
+        opt_cmds = self.process_optimization_cycle()
+        return opt_cmds
 
     def trigger_scenario_unblock_route(self, src: str = "J3", dst: str = "J2") -> List[Dict]:
         """Unblocks specified corridor."""
@@ -249,7 +343,8 @@ class FLOOptimizer:
         for e in evts:
             self.events.insert(0, e)
         self.pending_commands.extend(cmds)
-        return cmds
+        opt_cmds = self.process_optimization_cycle()
+        return opt_cmds
 
     def trigger_scenario_low_battery_test(self, agv_id: str = "AGV01", battery_val: float = 12.0) -> List[Dict]:
         """Drains battery of specified AGV to target % to demonstrate feasibility rejection & charging divert."""
@@ -267,7 +362,8 @@ class FLOOptimizer:
             for e in evts:
                 self.events.insert(0, e)
             self.pending_commands.extend(cmds)
-            return cmds
+            opt_cmds = self.process_optimization_cycle()
+            return opt_cmds
         return []
 
     def trigger_scenario_fail_agv(self, agv_id: str = "AGV01") -> List[Dict]:
@@ -277,7 +373,8 @@ class FLOOptimizer:
         for e in evts:
             self.events.insert(0, e)
         self.pending_commands.extend(cmds)
-        return cmds
+        opt_cmds = self.process_optimization_cycle()
+        return opt_cmds
 
     def trigger_scenario_recover_agv(self, agv_id: str = "AGV01") -> List[Dict]:
         """Repairs a failed AGV and restores it to operational AVAILABLE state."""
@@ -288,8 +385,8 @@ class FLOOptimizer:
             cmd = {"command": "set_status", "agv_id": agv_id, "status": "AVAILABLE"}
             self.add_event("SUCCESS", f"RECOVERY: AGV {agv_id} repaired and restored to AVAILABLE fleet", "TASK")
             self.pending_commands.append(cmd)
-            self.process_optimization_cycle()
-            return [cmd]
+            opt_cmds = self.process_optimization_cycle()
+            return opt_cmds
         return []
 
     def create_new_task(
@@ -300,7 +397,7 @@ class FLOOptimizer:
         weight: float = 10.0,
         deadline_seconds: float = 300.0
     ) -> TaskModel:
-        """Creates a new runtime task and triggers an immediate optimization cycle."""
+        """Creates a new runtime task, enqueues it, and triggers optimization."""
         task_id = f"T{len(self.tasks)+1:03d}"
         task = TaskModel(
             task_id=task_id,
@@ -313,8 +410,17 @@ class FLOOptimizer:
             status=TaskStatus.WAITING
         )
         self.tasks[task_id] = task
+
+        print(f"[CORE] Task created: {task_id}")
+        print(f"[CORE] Task queued: {task_id}")
+
         self.add_event("INFO", f"New Task Created: {task_id} ({pickup} → {destination}, [{priority.value}])", "TASK")
 
-        # Run optimization immediately for new task
-        self.process_optimization_cycle()
+        # Push create_task command so Factory Simulator registers it immediately
+        self.pending_commands.append({"command": "create_task", "task": task.model_dump()})
+
+        # Run optimization and collect assignment commands
+        cmds = self.process_optimization_cycle()
+        self.pending_commands.extend(cmds)
+
         return task

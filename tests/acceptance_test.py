@@ -9,10 +9,32 @@ import time
 import httpx
 import sys
 
+import os
+
+def kill_existing_servers():
+    """Kills any existing python uvicorn servers bound to ports 8000/8001."""
+    current_pid = os.getpid()
+    try:
+        if os.name == 'nt':
+            cmd = 'powershell -Command "Get-NetTCPConnection -LocalPort 8000,8001 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess"'
+            output = subprocess.check_output(cmd, shell=True, text=True)
+            pids = set(output.strip().split())
+            for pid_str in pids:
+                if pid_str and pid_str.isdigit():
+                    pid = int(pid_str)
+                    if pid != current_pid and pid > 0:
+                        subprocess.run(f"taskkill /f /pid {pid}", shell=True, capture_output=True)
+            time.sleep(1.0)
+    except Exception:
+        pass
+
 def run_acceptance_test():
     print("====================================================")
     print("    FLO FULL SYSTEM ACCEPTANCE TEST SEQUENCE")
     print("====================================================")
+
+    # 0. Kill stale processes
+    kill_existing_servers()
 
     # 1. Launch Core (Session 1)
     print("[1/22] Launching Session 1 — FLO Core Engine (Port 8000)...")

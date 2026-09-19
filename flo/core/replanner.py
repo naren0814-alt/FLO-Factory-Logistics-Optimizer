@@ -24,6 +24,7 @@ class Replanner:
         """
         Triggered when route congestion increases or route is blocked.
         Re-plans routes for active AGVs if a faster/cheaper route exists.
+        If a route is completely blocked and no alternative exists, releases task to WAITING.
         """
         commands = []
         events = []
@@ -54,10 +55,30 @@ class Replanner:
                                 id=f"evt_{len(events)+1}",
                                 timestamp="NOW",
                                 level="WARNING",
-                                message=f"AGV {agv.id} dynamically rerouted to bypass congestion/blockage via {new_route}",
+                                message=f"AGV {agv.id} dynamically rerouted to bypass congestion/blockage via {' -> '.join(new_route)}",
                                 category="REPLAN"
                             )
                             events.append(evt)
+                    else:
+                        # No unblocked route exists! Release task to WAITING
+                        if agv.current_task_id and agv.current_task_id in tasks:
+                            task = tasks[agv.current_task_id]
+                            task.status = TaskStatus.WAITING
+                            task.assigned_agv_id = None
+                            t_id = agv.current_task_id
+                            agv.current_task_id = None
+                            agv.current_route = []
+                            agv.route_index = 0
+                            agv.status = AGVStatus.AVAILABLE
+
+                            commands.append({"command": "release_task", "task_id": t_id, "agv_id": agv.id})
+                            events.append(EventLog(
+                                id=f"evt_block_{len(events)+1}",
+                                timestamp="NOW",
+                                level="WARNING",
+                                message=f"Task {t_id} placed in WAITING: No currently feasible route available for AGV {agv.id}",
+                                category="CONGESTION"
+                            ))
 
         return commands, events
 
@@ -69,7 +90,7 @@ class Replanner:
     ) -> Tuple[List[Dict], List[EventLog]]:
         """
         Triggered when an AGV fails (`[ FAIL AGV ]`).
-        Re-queues task and assigns to next best feasible AGV.
+        Re-queues task, releases reservations, and assigns to next best feasible AGV.
         """
         commands = []
         events = []
@@ -94,9 +115,24 @@ class Replanner:
         # Requeue active task if present
         if failed_agv.current_task_id and failed_agv.current_task_id in tasks:
             task = tasks[failed_agv.current_task_id]
+            stale_task_id = task.task_id
+
             task.status = TaskStatus.REASSIGNING
             task.assigned_agv_id = None
             failed_agv.current_task_id = None
+            failed_agv.current_route = []
+            failed_agv.route_index = 0
+
+            # Signal simulator to release task
+            commands.append({"command": "release_task", "task_id": stale_task_id, "agv_id": failed_agv_id})
+
+            events.append(EventLog(
+                id=f"evt_rel_{stale_task_id}",
+                timestamp="NOW",
+                level="WARNING",
+                message=f"Task {stale_task_id} released from failed AGV {failed_agv_id} -> entering REASSIGNMENT",
+                category="FAILURE"
+            ))
 
             # Attempt reassignment with remaining operational AGVs
             remaining_agvs = [a for a in agvs if a.id != failed_agv.id and a.status != AGVStatus.FAILED]
@@ -116,14 +152,16 @@ class Replanner:
                     "command": "assign_task",
                     "agv_id": new_agv.id,
                     "task_id": task.task_id,
-                    "route": route_data["route"]
+                    "route": route_data["route"],
+                    "pickup": task.pickup,
+                    "destination": task.destination
                 })
 
                 evt2 = EventLog(
                     id=f"evt_fail_2",
                     timestamp="NOW",
                     level="SUCCESS",
-                    message=f"Task {task.task_id} successfully reassigned from failed {failed_agv.id} to {new_agv.id}",
+                    message=f"Task {task.task_id} successfully reassigned from failed {failed_agv_id} to {new_agv.id}",
                     category="REPLAN"
                 )
                 events.append(evt2)
@@ -147,20 +185,34 @@ class Replanner:
     ) -> Tuple[List[Dict], List[EventLog]]:
         """
         Diverts low-battery AGV to nearest charger.
+        If AGV has an assigned task it cannot finish, releases task to WAITING/REASSIGNMENT.
         """
         commands = []
         events = []
 
-        if agv.charging or agv.status == AGVStatus.CHARGING:
+        if agv.charging or agv.status in [AGVStatus.CHARGING, AGVStatus.FAILED]:
             return commands, events
 
         charger_info = self.battery_mgr.find_nearest_charger(agv.current_node)
         if charger_info:
             charger_id, route_data = charger_info
             
-            # Save task if currently performing one
-            if agv.current_task_id and not agv.saved_task_id:
-                agv.saved_task_id = agv.current_task_id
+            # If AGV has an assigned task and is not carrying material or battery critically low, release task
+            if agv.current_task_id and agv.current_task_id in tasks:
+                task = tasks[agv.current_task_id]
+                if not agv.carrying_material or agv.battery < 15.0:
+                    t_id = task.task_id
+                    task.status = TaskStatus.WAITING
+                    task.assigned_agv_id = None
+                    agv.current_task_id = None
+                    commands.append({"command": "release_task", "task_id": t_id, "agv_id": agv.id})
+                    events.append(EventLog(
+                        id=f"evt_bat_rel_{t_id}",
+                        timestamp="NOW",
+                        level="WARNING",
+                        message=f"Task {t_id} released from low-battery AGV {agv.id} -> requeued to WAITING",
+                        category="BATTERY"
+                    ))
 
             agv.status = AGVStatus.LOW_BATTERY
             agv.target_charger = charger_id

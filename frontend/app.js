@@ -24,7 +24,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function startPolling() {
   fetchState();
-  setInterval(fetchState, 200); // 5Hz polling for minimal network overhead
+  setInterval(fetchState, 200); // 5Hz state sync loop
 }
 
 async function fetchState() {
@@ -83,11 +83,11 @@ function renderCanvas() {
   if (!ctx || !canvas) return;
 
   // Clear Canvas
-  ctx.fillStyle = '#0a0f1d';
+  ctx.fillStyle = '#f8fafc';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   // Draw Subtle Grid
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.03)';
+  ctx.strokeStyle = '#e2e8f0';
   ctx.lineWidth = 1;
   for (let x = 0; x < canvas.width; x += 40) {
     ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
@@ -114,15 +114,15 @@ function renderCanvas() {
       ctx.lineTo(v.x, v.y);
 
       if (edge.blocked) {
-        ctx.strokeStyle = '#ef4444';
+        ctx.strokeStyle = '#dc2626';
         ctx.lineWidth = 4;
         ctx.setLineDash([6, 6]);
       } else if (edge.congestion > 0.5) {
-        ctx.strokeStyle = '#f59e0b';
+        ctx.strokeStyle = '#d97706';
         ctx.lineWidth = 3.5;
         ctx.setLineDash([4, 4]);
       } else {
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+        ctx.strokeStyle = '#cbd5e1';
         ctx.lineWidth = 2;
         ctx.setLineDash([]);
       }
@@ -136,22 +136,22 @@ function renderCanvas() {
     floState.nodes.forEach(n => {
       ctx.save();
       if (n.node_type === 'warehouse') {
-        drawFacilityBox(n.x, n.y, 110, 60, '#3b82f6', 'RAW WAREHOUSE');
+        drawFacilityBox(n.x, n.y, 110, 60, '#2563eb', 'RAW WAREHOUSE');
       } else if (n.node_type === 'machine') {
-        drawFacilityBox(n.x, n.y, 90, 50, '#8b5cf6', n.name);
+        drawFacilityBox(n.x, n.y, 90, 50, '#7c3aed', n.name);
       } else if (n.node_type === 'assembly') {
-        drawFacilityBox(n.x, n.y, 100, 50, '#ec4899', 'ASSEMBLY');
+        drawFacilityBox(n.x, n.y, 100, 50, '#db2777', 'ASSEMBLY');
       } else if (n.node_type === 'dispatch') {
-        drawFacilityBox(n.x, n.y, 110, 60, '#10b981', 'DISPATCH');
+        drawFacilityBox(n.x, n.y, 110, 60, '#16a34a', 'DISPATCH');
       } else if (n.node_type === 'charging') {
-        drawFacilityBox(n.x, n.y, 90, 45, '#f59e0b', '⚡ CHARGER');
+        drawFacilityBox(n.x, n.y, 90, 45, '#ca8a04', '⚡ CHARGER');
       } else if (n.node_type === 'junction') {
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
+        ctx.fillStyle = '#94a3b8';
         ctx.beginPath();
         ctx.arc(n.x, n.y, 4, 0, Math.PI * 2);
         ctx.fill();
         ctx.fillStyle = '#64748b';
-        ctx.font = '10px JetBrains Mono';
+        ctx.font = '10px Arial';
         ctx.fillText(n.id, n.x + 6, n.y - 6);
       }
       ctx.restore();
@@ -163,9 +163,9 @@ function renderCanvas() {
     simState.agvs.forEach(agv => {
       if (agv.current_route && agv.current_route.length > 1) {
         ctx.beginPath();
-        ctx.strokeStyle = agv.status === 'LOW_BATTERY' ? '#f59e0b' : '#06b6d4';
-        ctx.lineWidth = 1.8;
-        ctx.setLineDash([3, 3]);
+        ctx.strokeStyle = agv.status === 'LOW_BATTERY' ? '#d97706' : '#0284c7';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([4, 4]);
 
         for (let i = agv.route_index; i < agv.current_route.length; i++) {
           const nid = agv.current_route[i];
@@ -181,7 +181,7 @@ function renderCanvas() {
     });
   }
 
-  // 4. Draw AGVs with Offset if Multiple Bots at the Same Node/Position
+  // 4. Draw AGVs with Authoritative Status Color & Co-location Radial Offsets
   if (simState.agvs) {
     const posGroups = {};
     simState.agvs.forEach(agv => {
@@ -198,7 +198,7 @@ function renderCanvas() {
       let drawX = agv.x;
       let drawY = agv.y;
 
-      // Offset multiple AGVs at the same location radially so they are separately visible
+      // Radial offset for co-located AGVs
       if (group.length > 1) {
         const angle = (indexInGroup / group.length) * Math.PI * 2 - Math.PI / 2;
         const radius = 18;
@@ -208,31 +208,32 @@ function renderCanvas() {
 
       ctx.save();
 
-      let color = '#10b981'; // green OK
-      if (agv.status === 'FAILED') color = '#ef4444';
-      else if (agv.status === 'LOW_BATTERY') color = '#f97316';
-      else if (agv.status === 'CHARGING') color = '#fbbf24';
-      else if (agv.status.includes('MOVING')) color = '#06b6d4';
+      // Authoritative Status Color Mapping
+      let color = '#16a34a'; // AVAILABLE -> Green
+      if (agv.status === 'FAILED') color = '#dc2626'; // Red
+      else if (agv.status === 'LOW_BATTERY') color = '#ea580c'; // Orange
+      else if (agv.status === 'CHARGING') color = '#ca8a04'; // Yellow
+      else if (agv.status.includes('MOVING')) color = '#2563eb'; // Blue
 
-      // AGV Outer Ring
+      // AGV Body Circle
       ctx.fillStyle = color;
       ctx.beginPath();
       ctx.arc(drawX, drawY, 11, 0, Math.PI * 2);
       ctx.fill();
 
       // Inner Core
-      ctx.fillStyle = '#0f172a';
+      ctx.fillStyle = '#ffffff';
       ctx.beginPath();
-      ctx.arc(drawX, drawY, 6, 0, Math.PI * 2);
+      ctx.arc(drawX, drawY, 5, 0, Math.PI * 2);
       ctx.fill();
 
       // Labels: AGV ID & Battery %
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 10px Inter';
+      ctx.fillStyle = '#1e293b';
+      ctx.font = 'bold 10px Arial';
       ctx.fillText(agv.id, drawX - 14, drawY - 15);
 
-      ctx.fillStyle = agv.battery < 20 ? '#ef4444' : '#34d399';
-      ctx.font = '9px JetBrains Mono';
+      ctx.fillStyle = agv.battery < 20 ? '#dc2626' : '#15803d';
+      ctx.font = 'bold 9px monospace';
       ctx.fillText(`${Math.round(agv.battery)}%`, drawX - 10, drawY + 22);
 
       ctx.restore();
@@ -241,16 +242,16 @@ function renderCanvas() {
 }
 
 function drawFacilityBox(x, y, width, height, color, label) {
-  ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+  ctx.fillStyle = '#ffffff';
   ctx.strokeStyle = color;
-  ctx.lineWidth = 1.5;
+  ctx.lineWidth = 1.8;
   ctx.beginPath();
   ctx.roundRect(x - width/2, y - height/2, width, height, 6);
   ctx.fill();
   ctx.stroke();
 
   ctx.fillStyle = color;
-  ctx.font = 'bold 10px Inter';
+  ctx.font = 'bold 10px Arial';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(label, x, y);
@@ -261,10 +262,11 @@ function drawFacilityBox(x, y, width, height, color, label) {
  * ---------------------------------------------------- */
 function renderKPIs() {
   const m = floState.metrics || {};
-  const activeCount = (simState.tasks || []).filter(t => t.status !== 'COMPLETED').length;
+  const completedCount = (simState.tasks || []).filter(t => t.status === 'COMPLETED').length;
+  const pendingCount = (simState.tasks || []).filter(t => t.status !== 'COMPLETED').length;
   
-  document.getElementById('kpiCompleted').innerText = m.completed_tasks || 0;
-  document.getElementById('kpiPending').innerText = activeCount;
+  document.getElementById('kpiCompleted').innerText = completedCount;
+  document.getElementById('kpiPending').innerText = pendingCount;
   document.getElementById('kpiAvgTime').innerText = m.avg_delivery_time ? `${m.avg_delivery_time.toFixed(1)}s` : '0s';
   document.getElementById('kpiGain').innerText = m.flo_efficiency_gain_pct ? `+${m.flo_efficiency_gain_pct.toFixed(1)}%` : '0%';
 }
@@ -280,12 +282,14 @@ function renderAGVTable() {
     else if (agv.status === 'CHARGING') badgeClass = 'badge-charging';
     else if (agv.status.includes('MOVING')) badgeClass = 'badge-moving';
 
+    const taskLabel = agv.status === 'AVAILABLE' ? '-' : (agv.current_task_id || '-');
+
     return `
       <tr>
         <td><strong>${agv.id}</strong></td>
         <td>${Math.round(agv.battery)}%</td>
         <td><span class="badge ${badgeClass}">${agv.status}</span></td>
-        <td>${agv.current_task_id || '-'}</td>
+        <td>${taskLabel}</td>
       </tr>
     `;
   }).join('');
@@ -295,11 +299,11 @@ function renderTaskTable() {
   const tbody = document.getElementById('taskTableBody');
   if (!tbody || !simState.tasks) return;
 
-  // Filter out COMPLETED tasks from active queue table
+  // Filter out COMPLETED tasks from the active queue display so queue stays clean!
   const activeTasks = simState.tasks.filter(t => t.status !== 'COMPLETED');
 
   if (activeTasks.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-dim); padding: 16px;">No active tasks in queue</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 16px;">No active tasks in queue</td></tr>`;
     return;
   }
 
@@ -323,7 +327,7 @@ function renderEvents() {
 
   container.innerHTML = floState.events.slice(0, 10).map(e => `
     <div class="log-entry ${e.level}">
-      <span style="color: var(--text-dim); margin-right: 6px;">[${e.timestamp}]</span>
+      <span style="color: var(--text-muted); margin-right: 6px;">[${e.timestamp}]</span>
       <strong>[${e.category}]</strong> ${e.message}
     </div>
   `).join('');
@@ -423,31 +427,48 @@ async function submitRecoverAGV() {
 }
 
 async function triggerUrgentTask() {
-  await fetch(`${CORE_URL}/api/task/create`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      pickup: 'WAREHOUSE',
-      destination: 'ASSY',
-      priority: 'URGENT',
-      weight: 30.0,
-      deadline_seconds: 120.0
-    })
-  });
+  try {
+    const res = await fetch(`${CORE_URL}/api/task/create`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        pickup: 'WAREHOUSE',
+        destination: 'ASSY',
+        priority: 'URGENT',
+        weight: 30.0,
+        deadline_seconds: 120.0
+      })
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    fetchState();
+  } catch (err) {
+    alert("CORE DISCONNECTED: Task could not be created.");
+  }
 }
 
 async function submitNewTask(e) {
   e.preventDefault();
-  const pickup = document.getElementById('taskPickup').value;
-  const destination = document.getElementById('taskDest').value;
-  const priority = document.getElementById('taskPriority').value;
-  const weight = parseFloat(document.getElementById('taskWeight').value);
+  try {
+    const pickup = document.getElementById('taskPickup').value;
+    const destination = document.getElementById('taskDest').value;
+    const priority = document.getElementById('taskPriority').value;
+    const weight = parseFloat(document.getElementById('taskWeight').value);
 
-  await fetch(`${CORE_URL}/api/task/create`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pickup, destination, priority, weight, deadline_seconds: 300 })
-  });
+    const res = await fetch(`${FACTORY_URL}/api/task/create`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pickup, destination, priority, weight, deadline_seconds: 300 })
+    });
 
-  closeNewTaskModal();
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
+    closeNewTaskModal();
+    fetchState();
+  } catch (err) {
+    console.error("Task creation failed:", err);
+    alert("CORE DISCONNECTED: Task could not be created.");
+  }
 }

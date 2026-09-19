@@ -4,28 +4,37 @@ Runs on Port 8001.
 """
 
 import asyncio
+import httpx
 import uvicorn
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+from typing import Dict, List, Optional
 import os
 
 from factory.simulator import FactorySimulatorEngine
 from factory.task_generator import get_initial_tasks
-from config.settings import FACTORY_PORT
+from flo.core.models import TaskPriority
+from config.settings import FACTORY_PORT, CORE_URL
 
 simulator = FactorySimulatorEngine()
 sync_task = None
 
+class TaskCreateRequest(BaseModel):
+    pickup: str
+    destination: str
+    priority: TaskPriority = TaskPriority.NORMAL
+    weight: float = 10.0
+    deadline_seconds: float = 300.0
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup background sync loop
     global sync_task
     sync_task = asyncio.create_task(simulator.sync_with_core_loop())
     yield
-    # Shutdown
     if sync_task:
         sync_task.cancel()
 
@@ -50,6 +59,22 @@ if os.path.exists(frontend_dir):
 @app.get("/api/simulator_state")
 def get_simulator_state():
     return simulator.get_state()
+
+@app.post("/api/task/create")
+async def create_task_simulator(req: TaskCreateRequest):
+    """Forwards task creation request to FLO Core Engine and registers it locally."""
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.post(f"{CORE_URL}/api/task/create", json=req.model_dump())
+            if resp.status_code == 200:
+                data = resp.json()
+                task_data = data.get("task")
+                if task_data:
+                    simulator.execute_command({"command": "create_task", "task": task_data})
+                return data
+            raise HTTPException(status_code=resp.status_code, detail="Core task creation failed")
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"CORE DISCONNECTED: Task could not be created ({str(e)})")
 
 @app.post("/api/control/pause")
 def pause_simulator():

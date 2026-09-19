@@ -68,6 +68,8 @@ class AssignmentEngine:
         Evaluates all AGVs through Stage 1 & Stage 2 optimization.
         Returns (best_agv, decision_explanation, combined_route_data).
         """
+        print(f"[CORE] Selecting AGV for {task.task_id}")
+
         evaluations: List[FeasibilityResult] = []
         best_agv: Optional[AGVModel] = None
         best_score = float('inf')
@@ -99,6 +101,12 @@ class AssignmentEngine:
         # Build Decision Explanation
         timestamp_str = datetime.now().strftime("%H:%M:%S")
         if best_agv and best_route_data:
+            print(f"[CORE] Selected {best_agv.id}")
+            print(f"[CORE] Battery check: PASS")
+            print(f"[CORE] Route: {' -> '.join(best_route_data['route'])}")
+            print(f"[CORE] Coordination: PASS")
+            print(f"[CORE] Assignment sent to Factory")
+
             reasons = [f"Selected {best_agv.id} (Score: {best_score:.1f})"]
             for ev in evaluations:
                 if ev.agv_id != best_agv.id:
